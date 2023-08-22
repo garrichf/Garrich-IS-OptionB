@@ -202,6 +202,7 @@ model_inputs = total_dataset[len(total_dataset) - len(test_data) - PREDICTION_DA
 
 model_inputs = model_inputs.reshape(-1, 1)
 # TO DO: Explain the above line
+# Reshapes 1D array to a 2D array.
 
 model_inputs = scaler.transform(model_inputs)
 # We again normalize our closing price data to fit them into the range (0,1)
