@@ -1,21 +1,4 @@
-# File: stock_prediction.py
-# Authors: Cheong Koo and Bao Vo
-# Date: 14/07/2021(v1); 19/07/2021 (v2); 25/07/2023 (v3)
-
-# Code modified from:
-# Title: Predicting Stock Prices with Python
-# Youtuble link: https://www.youtube.com/watch?v=PuZY9q-aKLw
-# By: NeuralNine
-
-# Need to install the following:
-# pip install numpy
-# pip install matplotlib
-# pip install pandas
-# pip install tensorflow
-# pip install scikit-learn
-# pip install pandas-datareader
-# pip install yfinance
-
+import keras.layers
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -23,84 +6,136 @@ import pandas_datareader as web
 import datetime as dt
 import tensorflow as tf
 import yfinance as yf
-
+from sklearn.model_selection import train_test_split
+from collections import deque # A type of queue which stands for double ended queue which allows the access to front and back of queue.
+from parameters import *
+# from sklearn import preprocessing
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM, InputLayer
 
-#------------------------------------------------------------------------------
-# Load Data
-## TO DO:
-# 1) Check if data has been saved before. 
-# If so, load the saved data
-# If not, save the data into a directory
-#------------------------------------------------------------------------------
 DATA_SOURCE = "yahoo"
-COMPANY = "TSLA"
+# Set scaler variable to MinMaxScalar
+scaler = MinMaxScaler()
 
-# start = '2012-01-01', end='2017-01-01'
-TRAIN_START = '2015-01-01'
-TRAIN_END = '2020-01-01'
+# Function for randomly shuffling the dataset
+def shuffle_in_unison(a, b):
+    # shuffle two arrays in the same way
+    state = np.random.get_state()
+    np.random.shuffle(a)
+    np.random.set_state(state)
+    np.random.shuffle(b)
 
-data =  yf.download(COMPANY, start=TRAIN_START, end=TRAIN_END, progress=False)
-# yf.download(COMPANY, start = TRAIN_START, end=TRAIN_END)
 
-# For more details: 
-# https://pandas.pydata.org/pandas-docs/stable/user_guide/dsintro.html
-#------------------------------------------------------------------------------
-# Prepare Data
-## To do:
-# 1) Check if data has been prepared before. 
-# If so, load the saved data
-# If not, save the data into a directory
-# 2) Use a different price value eg. mid-point of Open & Close
-# 3) Change the Prediction days
-#------------------------------------------------------------------------------
-PRICE_VALUE = "Close"
+# Load and Process Data
+def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=False, shuffle=False, testSize=0.2, n_steps=numberOfSteps, lookup_step=1, feature_columns=columns):
+    # Download data from yahoo finance
+    # keepna=false parameter is so that if the rows have NaN it won't be downloaded
+    data = yf.download(company, trainStartDate, trainEndDate, keepna=False)
+    # Initialize dictionary to store the results
+    result = {}
+    # Add a copy of the current dataframe to the dictionary.
+    result['data'] = data.copy()
 
-scaler = MinMaxScaler(feature_range=(0, 1)) 
-# Note that, by default, feature_range=(0, 1). Thus, if you want a different 
-# feature_range (min,max) then you'll need to specify it here
-scaled_data = scaler.fit_transform(data[PRICE_VALUE].values.reshape(-1, 1))
-# Flatten and normalise the data
-# First, we reshape a 1D array(n) to 2D array(n,1)
-# We have to do that because sklearn.preprocessing.fit_transform()
-# requires a 2D array
-# Here n == len(scaled_data)
-# Then, we scale the whole array to the range (0,1)
-# The parameter -1 allows (np.)reshape to figure out the array size n automatically 
-# values.reshape(-1, 1) 
-# https://stackoverflow.com/questions/18691084/what-does-1-mean-in-numpy-reshape'
-# When reshaping an array, the new shape must contain the same number of elements 
-# as the old shape, meaning the products of the two shapes' dimensions must be equal. 
-# When using a -1, the dimension corresponding to the -1 will be the product of 
-# the dimensions of the original array divided by the product of the dimensions 
-# given to reshape so as to maintain the same number of elements.
+    # confirms that each column specified in feature_columns exist inside the dataframe
+    for col in feature_columns:
+        assert col in data.columns, f"'{col}' does not exist in the dataframe."
 
-# Number of days to look back to base the prediction
-PREDICTION_DAYS = 60 # Original
+    # Add date column if it does not exist, for some reason there is already a date column, but the format is weird.
+    if "Date" not in data.columns:
+        data["Date"] = data.index
+    if scale:
+        column_scaler = {}
+        # scale the data (prices) from 0 to 1
+        for column in feature_columns:
+            data[column] = scaler.fit_transform(np.expand_dims(data[column].values, axis=1))
+            column_scaler[column] = scaler
 
-# To store the training data
-x_train = []
-y_train = []
+    # scaling is done to convert the data stored in the dataframe to be within a specified range so
+    # that the model can compare and learn
+        # add the MinMaxScaler instances to the result returned
+        result["column_scaler"] = column_scaler
 
-scaled_data = scaled_data[:,0] # Turn the 2D array back to a 1D array
-# Prepare the data
-for x in range(PREDICTION_DAYS, len(scaled_data)):
-    x_train.append(scaled_data[x-PREDICTION_DAYS:x])
-    y_train.append(scaled_data[x])
+        # adds a future column in the dataframe, the .shift(-lookup_step)
+        # shifts the values of the columns up. specified by -lookup_step
+        data['Future'] = data['Adj Close'].shift(-lookup_step)
 
+        # copies the last lookup step rows and saves it in last_sequence.
+        last_sequence = np.array(data[feature_columns].tail(lookup_step))
+
+        # drops rows which has NaN in their row.
+        data.dropna(inplace=True)
+
+        # initialize sequence_data list
+        sequence_data = []
+        # initialize sequences double ended list which has maximum length of n_steps
+        # if maximum length is reached, the oldest data will be overwritten by new data
+        sequences = deque(maxlen=n_steps)
+        # entry is the combination of feature_columnns and the dates
+        # target is the future values.
+        for entry, target in zip(data[feature_columns + ["Date"]].values, data['Future'].values):
+            sequences.append(entry)
+            # if length of sequences has reached n_steps it will append array of sequences with target to sequence_data.
+            # this is so that the sequence_data can show the data in which, X amount of sequences will result in the
+            # target value to be achieved. To be used to train the model later on. In the current case it will use
+            # the past 50 days of data to determine the future value.
+            if len(sequences) == n_steps:
+                sequence_data.append([np.array(sequences), target])
+
+        # list object
+        # combines the feature columns sequences with last_sequence and creates a list
+        last_sequence = list([s[:len(feature_columns)] for s in sequences]) + list(last_sequence)
+        # the list is then converted to a numpy array with the type float32
+        last_sequence = np.array(last_sequence).astype(np.float32)
+        # save the array into the result dictionary as 'last_sequence'
+        result['last_sequence'] = last_sequence
+
+        # initialize list for X and y
+        X, y = [], []
+        # appends sequence to list X and target to list y
+        for seq, target in sequence_data:
+            X.append(seq)
+            y.append(target)
+        # converts the list to numpy arrays
+        X = np.array(X)
+        y = np.array(y)
+        # Split by Date
+        if splitByDate:
+            # split the dataset into training & testing sets by date (not randomly splitting)
+            train_samples = int((1 - testSize) * len(X))
+            # the colons here mean [: from beginning of dataframe. :] till the end of dataframe
+            result["X_train"] = X[:train_samples]
+            result["y_train"] = y[:train_samples]
+            result["X_test"] = X[train_samples:]
+            result["y_test"] = y[train_samples:]
+            if shuffle:
+                # shuffle the datasets for training (if shuffle parameter is set)
+                # this function is defined before the load_data
+                shuffle_in_unison(result["X_train"], result["y_train"])
+                shuffle_in_unison(result["X_test"], result["y_test"])
+        # if split by date is false then it will randomly split the data following specified test Size
+        else:
+            # split the dataset randomly between X_train, X_test, y_train, y_test using train_test_split
+            result["X_train"], result["X_test"], result["y_train"], result["y_test"] = train_test_split(X, y, test_size=testSize, shuffle=shuffle)
+
+        # get the list of test set dates
+        dates = result["X_test"][:, -1, -1]
+        # retrieve test features from the original dataframe
+        result["test_df"] = result["data"].loc[dates]
+        # remove duplicated dates in the testing dataframe
+        result["test_df"] = result["test_df"][~result["test_df"].index.duplicated(keep='first')]
+        # remove dates from the training/testing sets & convert to float32
+        result["X_train"] = result["X_train"][:, :, :len(feature_columns)].astype(np.float32)
+        result["X_test"] = result["X_test"][:, :, :len(feature_columns)].astype(np.float32)
+    return result
+
+data = loadData(company, trainStart, trainEnd, columns)
 # Convert them into an array
-x_train, y_train = np.array(x_train), np.array(y_train)
-# print(x_train.ndim)
-# print(x_train)
-# print(y_train.ndim)
-# print(y_train)
+x_train, y_train = data['X_train'], data['y_train']
 # Now, x_train is a 2D array(p,q) where p = len(scaled_data) - PREDICTION_DAYS
 # and q = PREDICTION_DAYS; while y_train is a 1D array(p)
 
-x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
-print(x_train)
+# x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
 # We now reshape x_train into a 3D array(p, q, 1); Note that x_train 
 # is an array of p inputs with each input being a 2D array 
 
@@ -116,8 +151,9 @@ model = Sequential() # Basic neural network
 # See: https://www.tensorflow.org/api_docs/python/tf/keras/Sequential
 # for some useful examples
 
-model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
-# This is our first hidden layer which also spcifies an input layer. 
+# model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+model.add(LSTM(units=50, return_sequences=True, batch_input_shape=(None, numberOfSteps, len(columns))))
+# This is our first hidden layer which also spcifies an input layer.
 # That's why we specify the input shape for this layer; 
 # i.e. the format of each training example
 # The above would be equivalent to the following two lines of code:
@@ -144,7 +180,7 @@ model.add(LSTM(units=50, return_sequences=True))
 # https://machinelearningmastery.com/stacked-long-short-term-memory-networks/
 
 model.add(Dropout(0.2))
-model.add(LSTM(units=50))
+model.add(keras.layers.LSTM(units=50))
 model.add(Dropout(0.2))
 
 model.add(Dense(units=1)) 
@@ -162,8 +198,9 @@ model.compile(optimizer='adam', loss='mean_squared_error')
 
 # Now we are going to train this model with our training data 
 # (x_train, y_train)
-model.fit(x_train, y_train, epochs=5, batch_size=32)
-# Other parameters to consider: How many rounds(epochs) are we going to
+# print(type(x_train))
+model.fit(x_train, y_train, epochs=25, batch_size=32)
+# Other parameters to consider: How many rounds(epochs) are we going to 
 # train our model? Typically, the more the better, but be careful about
 # overfitting!
 # What about batch_size? Well, again, please refer to 
@@ -191,7 +228,7 @@ model.fit(x_train, y_train, epochs=5, batch_size=32)
 TEST_START = '2020-01-02'
 TEST_END = '2022-12-31'
 
-test_data = yf.download(COMPANY, start=TRAIN_START, end=TRAIN_END, progress=False)
+test_data = yf.download(company, start=trainStart, end=trainEnd, progress=False)
 
 # The above bug is the reason for the following line of code
 test_data = test_data[1:]
@@ -246,11 +283,11 @@ predicted_prices = scaler.inverse_transform(predicted_prices)
 # 3) Show chart of next few days (predicted)
 #------------------------------------------------------------------------------
 
-plt.plot(actual_prices, color="black", label=f"Actual {COMPANY} Price")
-plt.plot(predicted_prices, color="green", label=f"Predicted {COMPANY} Price")
-plt.title(f"{COMPANY} Share Price")
+plt.plot(actual_prices, color="black", label=f"Actual {company} Price")
+plt.plot(predicted_prices, color="green", label=f"Predicted {company} Price")
+plt.title(f"{company} Share Price")
 plt.xlabel("Time")
-plt.ylabel(f"{COMPANY} Share Price")
+plt.ylabel(f"{company} Share Price")
 plt.legend()
 plt.show()
 
