@@ -7,8 +7,7 @@ import datetime as dt
 import tensorflow as tf
 import yfinance as yf
 from sklearn.model_selection import train_test_split
-from collections import \
-    deque  # A type of queue which stands for double ended queue which allows the access to front and back of queue.
+from collections import deque # A type of queue which stands for double ended queue which allows the access to front and back of queue.
 from parameters import *
 # from sklearn import preprocessing
 from sklearn.preprocessing import MinMaxScaler
@@ -20,10 +19,10 @@ import os
 # turns off error message
 pd.options.mode.chained_assignment = None
 
+
 DATA_SOURCE = "yahoo"
 # Set scaler variable to MinMaxScalar
 scaler = MinMaxScaler()
-
 
 # Function for randomly shuffling the dataset
 def shuffle_in_unison(a, b):
@@ -35,8 +34,7 @@ def shuffle_in_unison(a, b):
 
 
 # Load and Process Data
-def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=False, shuffle=False, testSize=0.3,
-             n_steps=numberOfSteps, lookup_step=1, feature_columns=columns):
+def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=False, shuffle=False, testSize=0.3, n_steps=numberOfSteps, lookup_step=1, feature_columns=columns):
     # Download data from yahoo finance
     # keepna=false parameter is so that if the rows have NaN it won't be downloaded
     data = yf.download(company, trainStartDate, trainEndDate, keepna=False)
@@ -62,8 +60,8 @@ def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=Fals
             data[column] = scaler.fit_transform(np.expand_dims(data[column].values, axis=1))
             column_scaler[column] = scaler
 
-        # scaling is done to convert the data stored in the dataframe to be within a specified range so
-        # that the model can compare and learn
+    # scaling is done to convert the data stored in the dataframe to be within a specified range so
+    # that the model can compare and learn
         # add the MinMaxScaler instances to the result returned
         result["column_scaler"] = column_scaler
 
@@ -143,61 +141,34 @@ def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=Fals
         print(result['test_df'])
     return result
 
-
 data = loadData(company, trainStart, trainEnd, columns)
-
-
-def buildModel(x_train_data, y_train_data, no_steps, no_features, units=256, cell=LSTM, no_layers=2, dropout=0.3, loss='mean_absolute_error',
-               optimizer="rmsprop", no_epochs=25, size_batch=32):
-    # Use the sequential model type
-    model = Sequential()
-    print(cell)
-    # a for loop to add layers based on the specified number of layers
-    for i in range(no_layers):
-        if i == 0:
-            # The first layer, add a layer with return_sequences=True
-            # batch_input_shape helps determine the input shape as in the number of inputs
-            # the format of batch_input_shape is supposed to be
-            # batch_input_shape(batch_size, number of steps and number of features)
-            model.add(cell(units, return_sequences=True, batch_input_shape=(None, no_steps, no_features)))
-        elif i == no_layers - 1:
-            # The last layer, add a recurrent layer with return_sequences=False. This if false because we want
-            # one single final output instead of multiple, return_sequences can be true depending on the use
-            # case.
-            model.add(cell(units, return_sequences=False))
-        else:
-            # The layers in between first and last, add a layer with return_sequences=True
-            model.add(cell(units, return_sequences=True))
-
-        # a dropout layer is introduced, the function of this is to prevent overfitting
-        # if a dropout rate of 0.2 that means that 20% of the data in this layer will be
-        # dropped out or set to 0.
-        model.add(Dropout(dropout))
-
-    # Add a Dense layer with one output unit and linear activation for regression,
-    # linear activation, produces an output that is directly proportional to the input.
-    model.add(Dense(1, activation="linear"))
-
-    # Compile the model with specified loss, metrics, and optimizer
-    model.compile(loss=loss, metrics=['mean_absolute_error'], optimizer=optimizer)
-
-    model.fit(x_train_data, y_train_data, epochs=no_epochs, batch_size=size_batch)
-
-    # Return the constructed model
-    return model
-
 
 if predict:
     # Convert them into an array
     x_train, y_train = data['X_train'], data['y_train']
+    #------------------------------------------------------------------------------
+    # Build the Model
+    ## TO DO:
+    # 1) Check if data has been built before.
+    # If so, load the saved data
+    # If not, save the data into a directory
+    # 2) Change the model to increase accuracy?
+    #------------------------------------------------------------------------------
+    model = Sequential() # Basic neural network
+    model.add(LSTM(units=50, return_sequences=True, batch_input_shape=(None, numberOfSteps, len(columns))))
+    model.add(Dropout(0.2))
+    model.add(LSTM(units=50, return_sequences=True))
+    model.add(Dropout(0.2))
+    model.add(keras.layers.LSTM(units=50))
+    model.add(Dropout(0.2))
+    model.add(Dense(units=1))
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    model.fit(x_train, y_train, epochs=50, batch_size=32)
+    #------------------------------------------------------------------------------
 
-    model = buildModel(x_train, y_train, numberOfSteps, len(columns), units=unitSize, cell=DLType, no_layers=numberOfLayers,
-                       dropout=DORate, loss=Loss, optimizer=Optimizer, no_epochs=Epochs, size_batch=BatchSize)
-    # ------------------------------------------------------------------------------
-
-    # ------------------------------------------------------------------------------
+    #------------------------------------------------------------------------------
     # Make predictions on test data
-    # ------------------------------------------------------------------------------
+    #------------------------------------------------------------------------------
 
     # Make predictions on test data
     y_test_pred = model.predict(data['X_test'])
@@ -219,8 +190,7 @@ if predict:
     plt.xlabel('Date')
     plt.ylabel('Price')
     plt.legend()
-    plt.show()
-
+    # plt.show()
 
 # print("Candlestick Chart Styling from MPLFinance : {}".format(mpl.available_styles()))
 
@@ -251,9 +221,7 @@ def candleGraph(dataframe, noOfTradingDays, scaleCandle):
     mpf.plot(candleData, type='candle', style='binance', title=candleTitle, ylabel='Price ($)')
     plt.show()
 
-
-# candleGraph(data['data'], num_trading_days, scaleCandle)
-
+candleGraph(data['data'], num_trading_days, scaleCandle)
 
 def boxPlot(dataframe, noOfTradingDays):
     # gets the specified columns for each box plot needed
@@ -281,16 +249,17 @@ def boxPlot(dataframe, noOfTradingDays):
     plt.show()
 
 
-# boxPlot(data['data'], num_trading_days)
+boxPlot(data['data'], num_trading_days)
 
-# ------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
 # Plot the test predictions
 ## To do:
 # 1) Candle stick charts
 # 2) Chart showing High & Lows of the day
 # 3) Show chart of next few days (predicted)
-# ------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
-# ------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 # Predict next day
-# ------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
