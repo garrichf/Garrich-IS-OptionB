@@ -38,7 +38,7 @@ def shuffle_in_unison(a, b):
 
 # Load and Process Data
 def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=False, shuffle=False, testSize=0.3,
-             n_past=pastDays, lookup_step=1, feature_columns=columns):
+             n_past=pastDays, future_days=1, feature_columns=columns):
     # Download data from yahoo finance
     # keepna=false parameter is so that if the rows have NaN it won't be downloaded
     data = yf.download(company, trainStartDate, trainEndDate, keepna=False)
@@ -71,10 +71,10 @@ def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=Fals
 
         # adds a future column in the dataframe, the .shift(-lookup_step)
         # shifts the values of the columns up. specified by -lookup_step
-        data['Future'] = data['Adj Close'].shift(-lookup_step)
+        data['Future'] = data['Adj Close'].shift(-future_days)
 
         # copies the last lookup step rows and saves it in last_sequence.
-        last_sequence = np.array(data[feature_columns].tail(lookup_step))
+        last_sequence = np.array(data[feature_columns].tail(future_days))
 
         # drops rows which has NaN in their row.
         data.dropna(inplace=True)
@@ -147,6 +147,9 @@ def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=Fals
     return result
 
 
+data = loadData(company, trainStart, trainEnd, columns)
+
+
 def buildModel(x_train_data, y_train_data, n_past, no_features, units=256, cell=LSTM, no_layers=2, dropout=0.3, loss='mean_absolute_error',
                optimizer="rmsprop", no_epochs=25, size_batch=32):
     # Use the sequential model type
@@ -186,52 +189,6 @@ def buildModel(x_train_data, y_train_data, n_past, no_features, units=256, cell=
     # Return the constructed model
     return model
 
-data = loadData(company, trainStart, trainEnd, columns)
-
-
-def predict_future(last_sequence, n_days):
-    x_sequence = last_sequence  # the last sequence in the dataframe
-    predicted_prices = []  # a list to keep the predicted prices
-
-    # use a for loop to iterate through the number of days into the future
-    for i in range(n_days):
-        # Reshape the input sequence for the model into a 3D model which is suitable for prediction.
-        # the first digit 1 refers to that there is one day of data at a single time
-        # the -1 is basically the time steps
-        # len(columns) is basically the number of attributes
-        x_sequence = x_sequence.reshape(1, -1, len(columns))
-        # Make a prediction of the next day
-        next_day_price = model.predict(x_sequence)
-
-        # Store the prediction into the list of predicted prices
-        predicted_prices.append(next_day_price)
-
-        # Update the input sequence for the next iteration (shift and append the prediction)
-        # the data on one end will be removed and the new data is added.
-        # the -1 in shift means shift the valeus to the left
-        x_sequence = np.roll(x_sequence, shift=-1, axis=1)
-        # this line is for adding the new price predicted to the end of the list
-        x_sequence[0, -1, -1] = next_day_price
-
-    # Inverse transform the predicted prices to get them in their original scale
-    # Because the original dataframe when scaling was a 2D array with 5 columns, the data
-    # has to be shaped accordingly to prevent errors and for inverse scaling to work.
-    # after the data is back to its normal values, i reshaped the data back into a 1D array.
-    predicted_prices = np.array(predicted_prices).reshape(-1, len(columns))
-    predicted_prices = data['column_scaler']['Adj Close'].inverse_transform(predicted_prices)
-    predicted_prices = np.array(predicted_prices).reshape(-1)
-
-    # Print out the predicted closing prices for X consecutive days into the future
-    # formatted to the 2 decimal points
-    for i in range(n_days):
-        print(f"Day {i + 1}: Predicted Closing Price: AUD${predicted_prices[i]:.2f}")
-
-    print("Lowest Price")
-    print(min(predicted_prices))
-    print("Average Price")
-    print(sum(predicted_prices)/len(predicted_prices))
-    print("Highest Price")
-    print(max(predicted_prices))
 
 if predict:
     # Convert them into an array
@@ -241,26 +198,34 @@ if predict:
                        dropout=DORate, loss=Loss, optimizer=Optimizer, no_epochs=Epochs, size_batch=BatchSize)
     # ------------------------------------------------------------------------------
 
+    # ------------------------------------------------------------------------------
+    # Make predictions on test data
+    # ------------------------------------------------------------------------------
+
     # Make predictions on test data
     y_test_pred = model.predict(data['X_test'])
+    # print(y_test_pred)
     # Inverse transform the scaled data to get the actual prices
     # y_test_actual = data['column_scaler']['Adj Close'].inverse_transform(data['y_test'].reshape(-1, 1))
     # y_test_pred_actual = data['column_scaler']['Adj Close'].inverse_transform(y_test_pred)
 
-    # y_test_actual = scaler.fit_transform(np.expand_dims(data['test_df']['Adj Close'].values, axis=1))
-    y_test_actual = data['y_test']
+    y_test_actual = scaler.fit_transform(np.expand_dims(data['test_df']['Adj Close'].values, axis=1))
+    # print(y_test_actual)
+    # y_test_actual = data['y_test']
+    # print(y_test_pred_actual)
 
     # Plot the test predictions
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(data['test_df'].index, y_test_actual, label='Actual Price')
-    # plt.plot(data['test_df'].index, y_test_pred, label='Predicted Price')
-    # plt.title(f'{company} Stock Price Prediction')
-    # plt.xlabel('Date')
-    # plt.ylabel('Price')
-    # plt.legend()
-    # plt.show()
+    plt.figure(figsize=(10, 6))
+    plt.plot(data['test_df'].index, y_test_actual, label='Actual Price')
+    plt.plot(data['test_df'].index, y_test_pred, label='Predicted Price')
+    plt.title(f'{company} Stock Price Prediction')
+    plt.xlabel('Date')
+    plt.ylabel('Price')
+    plt.legend()
+    plt.show()
 
-    predict_future(data["last_sequence"], futureDays)
+
+# print("Candlestick Chart Styling from MPLFinance : {}".format(mpl.available_styles()))
 
 
 def candleGraph(dataframe, noOfTradingDays, scaleCandle):
@@ -290,6 +255,9 @@ def candleGraph(dataframe, noOfTradingDays, scaleCandle):
     plt.show()
 
 
+# candleGraph(data['data'], num_trading_days, scaleCandle)
+
+
 def boxPlot(dataframe, noOfTradingDays):
     # gets the specified columns for each box plot needed
     boxData = dataframe[['High', 'Low', 'Open', 'Close', 'Adj Close']]
@@ -316,5 +284,16 @@ def boxPlot(dataframe, noOfTradingDays):
     plt.show()
 
 
-# candleGraph(data['data'], num_trading_days, scaleCandle)
 # boxPlot(data['data'], num_trading_days)
+
+# ------------------------------------------------------------------------------
+# Plot the test predictions
+## To do:
+# 1) Candle stick charts
+# 2) Chart showing High & Lows of the day
+# 3) Show chart of next few days (predicted)
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# Predict next day
+# ------------------------------------------------------------------------------

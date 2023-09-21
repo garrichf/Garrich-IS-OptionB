@@ -17,7 +17,7 @@ trainEnd = '2022-01-01'
 # date now
 date_now = time.strftime("%Y-%m-%d")
 
-columns = ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']
+columns = ['Open', 'High', 'Low', 'Close', 'Adj Close']
 
 # saving dataframe
 saveData = True
@@ -38,10 +38,11 @@ numberOfLayers = 4
 Optimizer = 'adam'
 Loss = 'mean_squared_error'
 # Deep Learning Type
-DLType = LSTM
+DLType = GRU
 # Dropout Rate
 DORate = 0.2
-numberOfSteps = 100
+pastDays = 50
+futureDays = 1500
 
 # ===========================================================================
 
@@ -49,8 +50,9 @@ numberOfSteps = 100
 
 # do you want to predict?
 predict = True
-Epochs = 50
+Epochs = 25
 BatchSize = 32
+futureprediction = True
 
 # ===========================================================================
 
