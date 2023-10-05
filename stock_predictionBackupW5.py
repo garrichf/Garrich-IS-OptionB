@@ -14,11 +14,11 @@ from parameters import *
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM, InputLayer
-from sklearn.metrics import mean_squared_error
 import mplfinance as mpf
 import os
 import numpy as np
-import statsmodels.api as sm
+
+
 
 # turns off error message
 pd.options.mode.chained_assignment = None
@@ -123,7 +123,6 @@ def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=Fals
             result["y_train"] = y[:train_samples]
             result["X_test"] = X[train_samples:]
             result["y_test"] = y[train_samples:]
-
             if shuffle:
                 # shuffle the datasets for training (if shuffle parameter is set)
                 # this function is defined before the load_data
@@ -132,9 +131,7 @@ def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=Fals
         # if split by date is false then it will randomly split the data following specified test Size
         else:
             # split the dataset randomly between X_train, X_test, y_train, y_test using train_test_split
-            result["X_train"], result["X_test"], result["y_train"], result["y_test"] = train_test_split(X, y,
-                                                                                                        test_size=testSize,
-                                                                                                        shuffle=shuffle)
+            result["X_train"], result["X_test"], result["y_train"], result["y_test"] = train_test_split(X, y, test_size=testSize, shuffle=shuffle)
 
         # get the list of test set dates
         dates = result["X_test"][:, -1, -1]
@@ -147,11 +144,11 @@ def loadData(company, trainStartDate, trainEndDate, scale=True, splitByDate=Fals
         result["X_test"] = result["X_test"][:, :, :len(feature_columns)].astype(np.float32)
 
         # print(result)
+        print(result['X_train'])
     return result
 
 
-def buildModel(x_train_data, y_train_data, n_past, no_features, units=256, cell=LSTM, no_layers=2, dropout=0.3,
-               loss='mean_absolute_error',
+def buildModel(x_train_data, y_train_data, n_past, no_features, units=256, cell=LSTM, no_layers=2, dropout=0.3, loss='mean_absolute_error',
                optimizer="rmsprop", no_epochs=25, size_batch=32):
     # Use the sequential model type
     model = Sequential()
@@ -186,6 +183,7 @@ def buildModel(x_train_data, y_train_data, n_past, no_features, units=256, cell=
     model.compile(loss=loss, metrics=['mean_absolute_error'], optimizer=optimizer)
 
     model.fit(x_train_data, y_train_data, epochs=no_epochs, batch_size=size_batch)
+
 
     # Return the constructed model
     return model
@@ -234,10 +232,9 @@ def predict_future(last_sequence, n_days):
     print("Lowest Price")
     print(min(predicted_prices))
     print("Average Price")
-    print(sum(predicted_prices) / len(predicted_prices))
+    print(sum(predicted_prices)/len(predicted_prices))
     print("Highest Price")
     print(max(predicted_prices))
-
 
 if predict:
     # Convert them into an array
@@ -247,15 +244,8 @@ if predict:
                        dropout=DORate, loss=Loss, optimizer=Optimizer, no_epochs=Epochs, size_batch=BatchSize)
     # ------------------------------------------------------------------------------
 
-    # building LSTM model with hard coded LSTM as the Deep learning model
-
-    lstmModel = buildModel(x_train, y_train, pastDays, len(columns), units=unitSize, cell=LSTM,
-                           no_layers=numberOfLayers,
-                           dropout=DORate, loss=Loss, optimizer=Optimizer, no_epochs=Epochs, size_batch=BatchSize)
-
     # Make predictions on test data
     y_test_pred = model.predict(data['X_test'])
-    lstm_pred = lstmModel.predict(data['X_test'])
     # Inverse transform the scaled data to get the actual prices
     # y_test_actual = data['column_scaler']['Adj Close'].inverse_transform(data['y_test'].reshape(-1, 1))
     # y_test_pred_actual = data['column_scaler']['Adj Close'].inverse_transform(y_test_pred)
@@ -263,45 +253,10 @@ if predict:
     # y_test_actual = scaler.fit_transform(np.expand_dims(data['test_df']['Adj Close'].values, axis=1))
     y_test_actual = data['y_test']
 
-    # print(data['test_df'].index)
-    # print(data['test_df'].shape)
-    # print(data['test_df'])
-
-    # Assuming 'train_data' is now indexed with a time index (order = (p, d, q))
-    # p = auto regressive order, refers to steps taken into account
-    # d = differencing order, higher value uses more memory
-    # q = moving average order, higher value allows for better prevention of errors
-    arima_model = sm.tsa.ARIMA(data['test_df']['Adj Close'], order=(1, 1, 1))
-    arima_result = arima_model.fit()
-
-    # Make predictions
-    arima_forecast = arima_result.predict(start=data['test_df'].index[0], end=data['test_df'].index[-1], dynamic=False)
-
-    # scaling the arima forecast from full prices to 0 to 1 float values
-    arima_forecast = scaler.fit_transform(np.expand_dims(data['test_df']['Adj Close'].values, axis=1))
-
-    # Creating the ensemble approaches
-    # combining arima and gru
-    arima_gru = (arima_forecast + y_test_pred) / 2
-    # combining arima and lstm
-    arima_lstm = (arima_forecast + lstm_pred) / 2
-    # combining lstm and gru
-    lstm_gru = (y_test_pred + lstm_pred) / 2
-    # print(arima_forecast)
-    # output_file_path = 'arima.csv'
-
-    # Save the DataFrame to a CSV file
-    # arima_forecast.to_csv(output_file_path, index=False)
-    # print(rmse)
     # Plot the test predictions
     plt.figure(figsize=(10, 6))
     plt.plot(data['test_df'].index, y_test_actual, label='Actual Price')
-    plt.plot(data['test_df'].index, y_test_pred, label='GRU')
-    plt.plot(data['test_df'].index, arima_forecast, label='ARIMA')
-    plt.plot(data['test_df'].index, lstm_pred, label='LSTM')
-    plt.plot(data['test_df'].index, arima_gru, label='arima-gru')
-    plt.plot(data['test_df'].index, arima_lstm, label='arima-lstm')
-    plt.plot(data['test_df'].index, lstm_gru, label='lstm-gru')
+    plt.plot(data['test_df'].index, y_test_pred, label='Predicted Price')
     plt.title(f'{company} Stock Price Prediction')
     plt.xlabel('Date')
     plt.ylabel('Price')
@@ -309,7 +264,6 @@ if predict:
     plt.show()
 
     predict_future(data["last_sequence"], futureDays)
-
 
 def candleGraph(dataframe, noOfTradingDays, scaleCandle):
     # get the columns High, Low, Open and Close from the dataframe, this is because
@@ -363,5 +317,7 @@ def boxPlot(dataframe, noOfTradingDays):
     # Show the plot
     plt.show()
 
+
 # candleGraph(data['data'], num_trading_days, scaleCandle)
 # boxPlot(data['data'], num_trading_days)
+

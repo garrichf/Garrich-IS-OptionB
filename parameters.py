@@ -19,7 +19,7 @@ date_now = time.strftime("%Y-%m-%d")
 
 columns = ['Open', 'High', 'Low', 'Close', 'Adj Close']
 
-# saving dataframe
+# saving dataframe  
 saveData = True
 company_data_filename = os.path.join("data", f"{company}_{date_now}.csv")
 
@@ -42,7 +42,7 @@ DLType = GRU
 # Dropout Rate
 DORate = 0.2
 pastDays = 50
-futureDays = 1500
+futureDays = 50
 
 # ===========================================================================
 
@@ -50,7 +50,7 @@ futureDays = 1500
 
 # do you want to predict?
 predict = True
-Epochs = 25
+Epochs = 5
 BatchSize = 32
 futureprediction = True
 
